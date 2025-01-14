@@ -24,6 +24,7 @@
 #include "mesh/generated/meshtastic/rtttl.pb.h"
 #include <Arduino.h>
 
+
 #ifdef HAS_NCP5623
 #include <graphics/RAKled.h>
 #endif
@@ -199,6 +200,8 @@ int32_t ExternalNotificationModule::runOnce()
 
         return EXT_NOTIFICATION_DEFAULT_THREAD_MS;
     }
+
+
 }
 
 bool ExternalNotificationModule::wantPacket(const meshtastic_MeshPacket *p)
@@ -467,14 +470,17 @@ ProcessMessage ExternalNotificationModule::handleReceived(const meshtastic_MeshP
             }
             
             // Sprinkler mod
+            bool sendAck= false;
             if (containsOff || containsOn || containsToggle) {
                 if (containsOff && getExternal(0)) {
                     LOG_INFO("externalNotificationModule - Notification Actuator (Off)");
                     setExternalOff(0);
+                    sendAck = true;
                 }
                 if (containsOn && !getExternal(0)) {
                     LOG_INFO("externalNotificationModule - Notification Actuator (On)");
                     setExternalOn(0);
+                    sendAck = true;
                 }
                 if (containsToggle) {
                     LOG_INFO("externalNotificationModule - Notification Actuator (Toggle)");
@@ -483,8 +489,25 @@ ProcessMessage ExternalNotificationModule::handleReceived(const meshtastic_MeshP
                     } else {
                         setExternalOn(0);
                     }
+                    sendAck = true;
                 }
             }
+            {
+                // message is "ACK" + old message
+                const char *ack = "ACK";
+                const char *message = (const char *)p.payload.bytes;
+                char ackMessage[128];
+                snprintf(ackMessage, sizeof(ackMessage), "%s %s", ack, message);
+                meshtastic_MeshPacket *p = allocDataPacket();
+                p->to = mp.from;
+                p->channel = mp.channel;
+                p->want_ack = true;
+                p->decoded.payload.size = strlen(ackMessage);
+                memcpy(p->decoded.payload.bytes, ackMessage, p->decoded.payload.size);
+                LOG_INFO("[EXTERNAL] Sending ACK to %d", mp.from);
+                service->sendToMesh(p, RX_SRC_LOCAL, true);
+            }
+
             
 
             if (moduleConfig.external_notification.alert_bell) {
